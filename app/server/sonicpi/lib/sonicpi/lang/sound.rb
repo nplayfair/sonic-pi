@@ -2769,20 +2769,20 @@ sample :loop_amen                    # starting it again
 
         return if path == nil
 
-        info = Synths::SynthInfo.get_info(:stereo_player)
+
         path = unify_tilde_dir(path) if path.is_a? String
 
         # Combine thread local defaults here as
         # normalise_and_resolve_synth_args has only been taught about
         # synth thread local defaults
 
-        args_h = normalise_and_resolve_sample_args(path, args_h, info)
+
 
         if @mod_sound_studio.sample_loaded?(path)
-          return trigger_sampler path, args_h, info
+          return trigger_sampler path, args_h
         else
           res = Promise.new
-          in_thread { res.deliver!(trigger_sampler path, args_h, info) }
+          in_thread { res.deliver!(trigger_sampler path, args_h)}
           return LazyNode.new(res)
         end
       end
@@ -2790,11 +2790,27 @@ sample :loop_amen                    # starting it again
       doc name:          :sample,
           introduced:    Version.new(2,0,0),
           summary:       "Trigger sample",
-          doc:           "This is the main method for playing back recorded sound files (samples). Sonic Pi comes with lots of great samples included (see the section under help) but you can also load and play `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` files from anywhere on your computer too. The `rate:` opt affects both the speed and the pitch of the playback. To control the rate of the sample in a pitch-meaningful way take a look at the `rpitch:` opt.
+          doc:           "Play back a recorded sound file (sample). Sonic Pi comes with lots of great samples included (see the section under help) but you can also load and play `.wav`, `.wave`, `.aif`, `.aiff` or `.flac` files from anywhere on your computer too. To play a built-in sample use the corresponding keyword such as `sample :bd_haus`. To play any file on your computer use a full path such as `sample \"/path/to/sample.wav\".
 
-The sampler synth has two separate envelopes - one for amplitude and one for the cutoff value for a resonant low pass filter. These work very similar to the standard synth envelopes except for two major differences. Firstly, the envelope times do not stretch or shrink to match the BPM. Secondly, the sustain time by default stretches to make the envelope fit the length of the sample. This is explained in detail in the tutorial.
+There are many opts for manipulating the playback. For example, the `rate:` opt affects both the speed and the pitch of the playback. To control the rate of the sample in a pitch-meaningful way take a look at the `rpitch:` opt.
 
-Check out the `use_sample_pack` for details on making it easy to work with a whole folder of your own sample files. Note, that on the first trigger of a sample, Sonic Pi has to load the sample which takes some time and may cause timing issues. To preload the samples you wish to work with consider using `load_sample` or `load_samples`.",
+The sampler synth has three separate envelopes - one for amplitude, one for a low pass filter and another for a high pass filter. These work very similar to the standard synth envelopes except for two major differences. Firstly, the envelope times do not stretch or shrink to match the BPM. Secondly, the sustain time by default stretches to make the envelope fit the length of the sample. This is explained in detail in the tutorial.
+
+Samples are loaded on-the-fly when first requested (and subsequently remembered). If the sample loading process takes longer than the schedule ahead time, the sample trigger will be skipped rather than  be played late and out of time. To avoid this you may preload any samples you wish to work with using `load_sample` or `load_samples`.
+
+Finally, the sampler supports a powerful filtering system to make it easier to work with large folders of samples. The filter commands must be used before the first standard opt. There are six kinds of filter parameters you may use:
+
+1. Folder strings - `\"/foo/bar\"` - which will add all samples within the folder to the set of candidates.
+2. Sample strings - `\"/path/to/sample.wav\"` - which will add the specific sample to the set of candidates.
+3. Other strings - `\"foobar\"` - which will filter the candidates based on whether the filename contains the string
+4. Regular expressions - `/b[aA]z.*/` - which will filter the candidates based on wither the regular expression matches the filename
+5. Keywords - `:quux` - will filter the candidates based on whether keyword is a direct match of the filename (without extension)
+7. Numbers - 0 - will select the candidate with that index (wrapping round like a ring if necessary)
+8. Lists of the above - `[\"/foo/bar\", \"baz\", /0-9.*/]` - will recurse down and work through the internal filter parameters as if they were in the top level.
+
+By combining commands which add to the candidates and then filtering those candidates it is possible work with folders full of samples in very powerful ways. Note that the specific ordering of filter parameters is irrelevant with the exception of the numbers - in which case the last number is the index. All the candidates will be gathered first before the filters are applied.
+",
+
           args:          [[:name_or_path, :symbol_or_string]],
           opts:          {:rate          => "Rate with which to play back the sample. Higher rates mean an increase in pitch and a decrease in duration. Default is 1.",
                           :beat_stretch  => "Stretch (or shrink) the sample to last for exactly the specified number of beats. Please note - this does *not* keep the pitch constant and is essentially the same as modifying the rate directly.",
@@ -2809,9 +2825,11 @@ Check out the `use_sample_pack` for details on making it easy to work with a who
                           :pre_amp           => "Amplitude multiplier which takes place immediately before any internal FX such as the low pass filter, compressor or pitch modification. Use this opt if you want to overload the compressor.",
                           :norm              => "Normalise the audio (make quieter parts of the sample louder and louder parts quieter) - this is similar to the normaliser FX. This may emphasise any clicks caused by clipping.",
                           :lpf               => "Cutoff value of the built-in low pass filter (lpf) in MIDI notes. Unless specified, the lpf is *not* added to the signal chain.",
-                          :lpf_attack_level  => "The peak lpf cutoff (value of cutoff at peak of attack) as a MIDI note. Default value is 130.",
-                          :lpf_decay_level   => "The level of lpf cutoff after the decay phase as a MIDI note. Default value is `:lpf_attack_level`.",
-                          :lpf_sustain_level => "The sustain cutoff (value of lpf cutoff at sustain time) as a MIDI note. Default value is `:lpf_decay_level`.",
+                          :lpf_init_level => "The inital low pass filter envelope value as a MIDI note. This envelope is bypassed if no lpf env opts are specified. Default value is to match the `lpf_min:` opt.",
+                          :lpf_attack_level  => "The peak lpf cutoff (value of cutoff at peak of attack) as a MIDI note. Default value is `:lpf_decay_level`.",
+                          :lpf_decay_level   => "The level of lpf cutoff after the decay phase as a MIDI note. Default value is `:lpf_sustain_level`.",
+                          :lpf_sustain_level => "The sustain cutoff (value of lpf cutoff at sustain time) as a MIDI note. Default value is `:lpf_release_level`.",
+                          :lpf_release_level => "The final value of the low pass filter envelope as a MIDI note. This envelope is bypassed if no lpf env opts are specified. Default value is to match the `lpf:` opt.",
                           :lpf_attack        => "Attack time for lpf cutoff filter. Amount of time (in beats) for sound to reach full cutoff value. Default value is set to match amp envelope's attack value.",
                           :lpf_decay         => "Decay time for lpf cutoff filter. Amount of time (in beats) for sound to move from full cutoff value (cutoff attack level) to the cutoff sustain level. Default value is set to match amp envelope's decay value.",
                           :lpf_sustain       =>  "Amount of time for lpf cutoff value to remain at sustain level in beats. When -1 (the default) will auto-stretch.",
@@ -2819,15 +2837,17 @@ Check out the `use_sample_pack` for details on making it easy to work with a who
                           :lpf_min           => "Starting value of the lpf cutoff envelope. Default is 30.",
                           :lpf_env_curve     => "Select the shape of the curve between levels in the lpf cutoff envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
                           :hpf               => "Cutoff value of the built-in high pass filter (hpf) in MIDI notes. Unless specified, the hpf is *not* added to the signal chain.",
-                          :hpf_attack_level  => "The peak hpf cutoff (value of cutoff at peak of attack) as a MIDI note. Default value is 130.",
-                          :hpf_decay_level   => "The level of hpf cutoff after the decay phase as a MIDI note. Default value is `:hpf_attack_level`.",
-                          :hpf_sustain_level => "The sustain cutoff (value of hpf cutoff at sustain time) as a MIDI note. Default value is `:hpf_decay_level`.",
+                          :hpf_init_level => "The initial high pass filter envelope value as a MIDI note. This envelope is bypassed if no hpf env opts are specified. Default value is set to 130",
+                          :hpf_attack_level  => "The peak hpf cutoff (value of cutoff at peak of attack) as a MIDI note. Default value is `hpf_decay_level:`.",
+                          :hpf_decay_level   => "The level of hpf cutoff after the decay phase as a MIDI note. Default value is `:hpf_sustain_level`.",
+                          :hpf_sustain_level => "The sustain cutoff (value of hpf cutoff at sustain time) as a MIDI note. Default value is `:hpf_release_level`.",
+                          :hpf_release_level => "The sustain hpf cutoff (value of hpf cutoff at sustain time) as a MIDI note. Default is `hpf:`.",
                           :hpf_attack        => "Attack time for hpf cutoff filter. Amount of time (in beats) for sound to reach full cutoff value. Default value is set to match amp envelope's attack value.",
                           :hpf_decay         => "Decay time for hpf cutoff filter. Amount of time (in beats) for sound to move from full cutoff value (cutoff attack level) to the cutoff sustain level. Default value is set to match amp envelope's decay value.",
                           :hpf_sustain       =>  "Amount of time for hpf cutoff value to remain at sustain level in beats. When -1 (the default) will auto-stretch.",
                           :hpf_release       => "Amount of time (in beats) for sound to move from hpf cutoff sustain value to hpf cutoff min value. Default value is set to match amp envelope's release value.",
                           :hpf_env_curve     => "Select the shape of the curve between levels in the hpf cutoff envelope. 1=linear, 2=exponential, 3=sine, 4=welch, 6=squared, 7=cubed",
-                          :hpf_max           => "Starting value of the hpf cutoff envelope. Default is 50",
+                          :hpf_max           => "Maximum value of the high pass filter envelope. Default is 200",
                           :rpitch        => "Rate modified pitch. Multiplies the rate by the appropriate ratio to shift up or down the specified amount in MIDI notes. Please note - this does *not* keep the duration and rhythmical rate constant and is essentially the same as modifying the rate directly.",
                           :pitch         => "Pitch adjustment in semitones. 1 is up a semitone, 12 is up an octave, -12 is down an octave etc. Maximum upper limit of 24 (up 2 octaves). Lower limit of -72 (down 6 octaves). Decimal numbers can be used for fine tuning.",
                           :window_size   => "Pitch shift-specific opt - only honoured if the pitch: opt is used. Pitch shift works by chopping the input into tiny slices, then playing these slices at a higher or lower rate. If we make the slices small enough and overlap them, it sounds like the original sound with the pitch changed. The window_size is the length of the slices and is measured in seconds. It needs to be around 0.2 (200ms) or greater for pitched sounds like guitar or bass, and needs to be around 0.02 (20ms) or lower for percussive sounds like drum loops. You can experiment with this to get the best sound for your input.",
@@ -3765,7 +3785,7 @@ If you wish your synth to work with Sonic Pi's automatic stereo sound infrastruc
         end
       end
 
-      def trigger_sampler(path, args_h, info, group=current_job_synth_group)
+      def trigger_sampler(path, args_h, group=current_job_synth_group)
         case path
         when Buffer
           buf_info = path
@@ -3777,8 +3797,11 @@ If you wish your synth to work with Sonic Pi's automatic stereo sound infrastruc
         else
           buf_info = load_sample_at_path(path)
         end
-
         sn = resolve_specific_sampler(buf_info.num_chans, args_h)
+
+        info = Synths::SynthInfo.get_info(sn)
+        args_h = normalise_and_resolve_sample_args(path, args_h, info)
+
         buf_id = buf_info.id
 
         unless in_good_time?
@@ -3792,9 +3815,10 @@ If you wish your synth to work with Sonic Pi's automatic stereo sound infrastruc
 
           unless Thread.current.thread_variable_get(:sonic_pi_mod_sound_synth_silent)
             if args_h.empty?
-              __delayed_message "sample #{path.inspect}"
+              __delayed_message "sample #{File.dirname(path).inspect},\n           #{File.basename(path).inspect}"
             else
-              __delayed_message "sample #{path.inspect}, #{arg_h_pp(args_h)}"
+              __delayed_message "sample #{File.dirname(path).inspect},\n           #{File.basename(path).inspect}, #{arg_h_pp(args_h)}"
+
             end
           end
           add_arg_slide_times!(args_h, info)
@@ -3873,6 +3897,7 @@ If you wish your synth to work with Sonic Pi's automatic stereo sound infrastruc
 
         add_out_bus_and_rand_buf!(args_h, out_bus)
         orig_synth_name = synth_name
+
         synth_name = info ? info.scsynth_name : synth_name
 
         validate_if_necessary! info, args_h
